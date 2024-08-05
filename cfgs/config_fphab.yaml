@@ -1,0 +1,27 @@
+# Data:
+path: '/data/wmucha/datasets/FPHAB'
+batch_size: 16
+img_size: [512,512]
+# TrainingConfig:
+num_workers: 12
+criterion: 'CrossEntropyLoss'
+data_type: '2D'
+experiment_name: 'FPHAB_pose_and_obj'
+device: 0
+lr: 0.1
+max_epochs: 1000
+early_stopping: 20
+weight_decay: 0.0
+momentum: 0.0
+grad_clipping: 0.0
+norm_mean: [0.485, 0.456, 0.406]
+norm_std: [0.229, 0.224, 0.225]
+load_model: True
+load_model_path: 'saved_models/EffHandEgoNet_FPHAB_512x512.pth'
+model_type: 'EffHandEgoNet_FPHAB'
+run_name: 'checkpoints/just_object'
+train_flag: True
+test_flag: False
+one_batch_flag: False
+dataset: 'fphab'
+# debug: True

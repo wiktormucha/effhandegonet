@@ -49,14 +49,16 @@ class H2O_Dataset_hand_train(Dataset):
         self.albu_transform = albu_transform
         self.data_dimension = "2D"
 
+        # self.imgs_paths = [os.path.join(
+        #     "/data/wmucha/datasets/h2o_ego/h2o_ego", path[0]) for path in self.imgs_paths[0]]
         for i in range(len(self.imgs_paths)):
             temp = os.path.join(
                 "/data/wmucha/datasets/h2o_ego/h2o_ego", self.imgs_paths[i][0])
 
             self.imgs_paths[i] = temp
 
-            if not os.path.exists(self.imgs_paths[i][0]):
-                raise FileNotFoundError(self.imgs_paths[i])
+        #     if not os.path.exists(self.imgs_paths[i][0]):
+        #         raise FileNotFoundError(self.imgs_paths[i])
 
         hand_pose_pths = []
         hand_pose_list = []
@@ -64,41 +66,53 @@ class H2O_Dataset_hand_train(Dataset):
         left_hand_flag_temp_list = []
         right_hand_flag_temp_list = []
 
-        for i in range(len(self.imgs_paths)):
-            temp_hand_pose = self.imgs_paths[i][0].replace(
-                "rgb", "hand_pose").replace(".png", ".txt")
+        # Assuming CAM_INTRS is a constant that doesn't change per iteration
+        cam_instr = CAM_INTRS
 
-            hand_pose_pths.append(temp_hand_pose)
+        # Transform paths using list comprehension
+        temp_hand_poses = [path[0].replace("rgb", "hand_pose").replace(
+            ".png", ".txt") for path in self.imgs_paths]
 
-            if not os.path.exists(temp_hand_pose):
-                raise FileNotFoundError(temp_hand_pose)
+        # Batch check for file existence
+        missing_files = [
+            path for path in temp_hand_poses if not os.path.exists(path)]
+        if missing_files:
+            # Raise the first missing file found
+            raise FileNotFoundError(missing_files[0])
 
-            cam_instr_pth = os.path.join(
-                temp_hand_pose[0:60], "cam_intrinsics.txt")
-            cam_instr = CAM_INTRS
+        # Process each hand pose
+        for temp_hand_pose in temp_hand_poses:
+            # cam_instr_pth = os.path.join(
+            #     temp_hand_pose[0:60], "cam_intrinsics.txt")
+
+            # Read hand pose
             hand_pose, hand_pose3D, left_hand_flag_temp, right_hand_flag_temp = self.__read_hand_pose(
                 temp_hand_pose, cam_instr)
 
+            # Append results to lists
+            hand_pose_pths.append(temp_hand_pose)
             hand_pose_list.append(hand_pose)
             hand_pose3D_list.append(hand_pose3D)
             left_hand_flag_temp_list.append(left_hand_flag_temp)
             right_hand_flag_temp_list.append(right_hand_flag_temp)
 
-        obj_pose_pths = []
-        for i in range(len(self.imgs_paths)):
-            temp_obj_pose = self.imgs_paths[i][0].replace(
-                "rgb", "obj_pose").replace(".png", ".txt")
+        # obj_pose_pths = []
+        # Transform paths using list comprehension
+        temp_obj_poses = [path[0].replace("rgb", "obj_pose").replace(
+            ".png", ".txt") for path in self.imgs_paths]
 
-            obj_pose_pths.append(temp_obj_pose)
+        # Batch check for file existence
+        missing_files = [
+            path for path in temp_obj_poses if not os.path.exists(path)]
+        if missing_files:
+            # Raise the first missing file found
+            raise FileNotFoundError(missing_files[0])
 
-            if not os.path.exists(temp_obj_pose):
-                raise FileNotFoundError(temp_obj_pose)
-
-        self.obj_pose_pths = np.array(obj_pose_pths)
-        self.hand_pose_pths = np.array(hand_pose_pths)
-
+        # Assignments to class attributes
+        # self.obj_pose_pths = np.array(temp_obj_poses)
+        # self.hand_pose_pths = np.array(hand_pose_pths)
         self.hand_pose2D = np.array(hand_pose_list)
-        self.hand_pose3D = np.array(hand_pose3D_list)
+        # self.hand_pose3D = np.array(hand_pose3D_list)
         self.left_hand_flag = np.array(left_hand_flag_temp_list)
         self.right_hand_flag = np.array(right_hand_flag_temp_list)
 

@@ -1,0 +1,27 @@
+# H2oHandsData:
+path: '/data/wmucha/datasets'
+batch_size: 16
+img_size: [512,512]
+norm_mean: [0.485, 0.456, 0.406]
+norm_std: [0.229, 0.224, 0.225]
+# TrainingConfig:
+experiment_name: 'h2o_2d_handpose'
+data_type: '2D'
+device: 7
+lr: 0.1
+max_epochs: 1000
+early_stopping: 10
+weight_decay: 0.0
+momentum: 0.9
+grad_clipping: 0.0
+criterion: 'EffHandEgoNetLossRegression'
+num_workers: 1
+load_model: True
+load_model_path: 'saved_models/EffHandEgoNet_H2O_512x512.pth'
+model_type: 'CustomEgocentric'
+run_name: 'checkpoints/swin_continue'
+train_flag: True
+# test_flag: True
+one_batch_flag: False
+dataset: 'h2o'
+debug: True

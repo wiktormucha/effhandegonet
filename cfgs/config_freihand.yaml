@@ -1,0 +1,31 @@
+# Data:
+
+path: "/data/wmucha/datasets/freihand"
+batch_size: 64
+img_size: [128,128]
+# max_train_samples: 100
+# max_val_samples: 100
+# TrainingConfig:
+num_workers: 12
+criterion: 'CrossEntropyLoss'
+data_type: '2D'
+experiment_name: 'FPHAB_pose_and_obj'
+# debug: True
+device: 7
+lr: 0.1
+max_epochs: 1000
+early_stopping: 20
+weight_decay: 0.0
+momentum: 0.0
+grad_clipping: 0.0
+norm_mean: [0.485, 0.456, 0.406]
+norm_std: [0.229, 0.224, 0.225]
+load_model: True
+load_model_path: 'saved_models/EffHandNet_FreiHAND_128x128.pth'
+model_type: 'EffHandNet'
+run_name: 'checkpoints/just_object'
+train_flag: True
+test_flag: False
+one_batch_flag: False
+dataset: 'freihand'
+debug: True
