@@ -14,6 +14,7 @@ import wandb
 import yaml
 from datasets.FPHA import get_FPHAB_dataset
 from constants import ALBUMENTATION_TRAIN
+from utils.loses import FPHALoss
 
 MAX_NUM_THREADS = 16
 
@@ -24,9 +25,6 @@ def freeze_seeds(seed_num=42):
     torch.manual_seed(seed_num)
     random.seed(seed_num)
     np.random.seed(seed_num)
-
-
-
 
 
 def main() -> None:

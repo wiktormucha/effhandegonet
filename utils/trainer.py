@@ -574,7 +574,7 @@ class Trainer_FPHA:
             labels = data["heatmaps"].to(self.device).type(
                 torch.cuda.FloatTensor)
             obj_label = data['obj'].to(self.device).type(
-                torch.cuda.FloatTensor)
+                torch.cuda.LongTensor)
 
             with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=True):
 
