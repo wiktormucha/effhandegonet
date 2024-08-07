@@ -10,6 +10,12 @@ from albumentations.pytorch.transforms import ToTensorV2
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from utils.general_utils import vector_to_heatmaps
+import torch
+from torch.nn.utils.rnn import pad_sequence
+from datasets.common_data_utils import sample2, albumentation_to_sequence
+import random
+import json
+from collections import Counter
 
 FPHA_CAM_INSTR = np.array([[1395.749023, 0, 935.732544],
                            [0, 1395.749268, 540.681030], [0, 0, 1]])
@@ -147,6 +153,25 @@ FPHA_ACTION_TO_OBJ = {
 }
 
 
+class CollateFPHA:
+    def __init__(self, pad_idx=0):
+        self.pad_idx = pad_idx
+
+    def __call__(self, batch):
+
+        action_id = np.array([item["action_id"] for item in batch])
+        positions = [item["keypoints"] for item in batch]
+        positions = pad_sequence(
+            positions, batch_first=True, padding_value=self.pad_idx)
+        action_label = np.array([item["action_label"] for item in batch])
+
+        return {
+            'action_id': torch.tensor(action_id),
+            'keypoints': positions.float(),
+            'action_label': torch.tensor(action_label),
+        }
+
+
 class FPHA_pose(Dataset):
 
     def __init__(self, data_cfg, type='train', albu=None) -> None:
@@ -245,10 +270,8 @@ class FPHA_pose(Dataset):
             action_label = skeleton_pth[7]
 
             obj_name = FPHA_ACTIONSTR_TO_OBJ[action_label]
-
             obj_label = FPHA_OBJ_DICT[obj_name]
             objs_labels.append(obj_label)
-
             file_index = skeleton_pth[-1][6:10]
             skeleton_pth = os.path.join('/', skeleton_pth[1], skeleton_pth[2], skeleton_pth[3], skeleton_pth[4],
                                         skeleton_pth[5], skeleton_pth[6], skeleton_pth[7], skeleton_pth[8], 'skeleton.txt')
@@ -256,19 +279,14 @@ class FPHA_pose(Dataset):
                 'Video_files', 'Hand_pose_annotation_v1')
 
             df = pd.read_csv(skeleton_pth, sep=' ', header=None)
-
             loaded_keypoint = df.iloc[int(file_index)].tolist()
-
             assert loaded_keypoint[0] == int(file_index)
-
             loaded_keypoint = loaded_keypoint[1:]
             all_poses.append(loaded_keypoint)
             hand_pose = np.array(loaded_keypoint)
             skel = hand_pose.reshape(21, -1)
-
             ske3d_cam = wrlds_2_cam(FPHA_CAM_EXTR, skel)[FPHA_RENDER_IDX]
             skel2d_img = cam_2_image(FPHA_CAM_INSTR, ske3d_cam)
-
             keypoints_list.append(skel2d_img)
             keypoints3d_list.append(ske3d_cam)
 
@@ -435,4 +453,293 @@ def get_FPHAB_dataset(config):
         "val": dataloader_val,
         "albumentation_train": albumentations_train,
         "albumentation_val": albumentation_val
+    }
+
+
+class FPHA_action(Dataset):
+
+    def __init__(self, data_cfg, subset='train', albumentation=None) -> None:
+        super().__init__()
+
+        base_pth = data_cfg.data_dir
+
+        pth = os.path.join(base_pth, 'data_split_action_recognition.txt')
+        frame_root_pth = os.path.join(base_pth, 'Video_files')
+        hand_pose_root_pth = os.path.join(base_pth, 'Hand_pose_annotation_v1')
+
+        self.obj_correct_counter = []
+        self.total_obj = 0
+        self.no_of_input_frames = data_cfg.no_of_input_frames
+        self.albumentation = albumentation
+        self.apply_vanishing = data_cfg.apply_vanishing
+        self.vanishing_proability = data_cfg.vanishing_proability
+        self.obj_to_vanish = data_cfg.obj_to_vanish
+        self.subset_type = subset
+        self.use_image = False
+        self.hand_pose_type = data_cfg.hand_pose_type
+        self.obj_type = data_cfg.obj_pose_type
+
+        df = pd.read_csv(pth, header=None)
+
+        df_train = df[1:601]
+        df_test = df[602:]
+
+        if subset == 'train':
+            self.action_list = np.array(df_train)
+            self.sample_type = 'random'
+
+            if self.hand_pose_type == 'ego_handpoints':
+                with open("pred_poses_asdf2_train.txt") as f:
+                    pose_data = f.read()
+
+            if self.obj_type == 'own':
+                with open("pred_obj_train.txt") as f:
+                    obj_pose_data = f.read()
+
+        elif subset == 'val':
+            self.action_list = np.array(df_test)
+            self.sample_type = 'uniform'
+
+            if self.hand_pose_type == 'ego_handpoints':
+                with open("pred_poses_asdf2_val.txt") as f:
+                    pose_data = f.read()
+
+            if self.obj_type == 'own':
+                with open("pred_obj_val.txt") as f:
+                    obj_pose_data = f.read()
+
+        else:
+            raise ValueError('Wrong subset type given: ', subset)
+
+        action_labels = []
+        action_frames = []
+        action_hand_pose = []
+        action_hand_pose_predicted = []
+        action_obj_pose_predicted = []
+
+        action_id_num = []
+
+        if self.hand_pose_type == 'ego_handpoints':
+            self.using_pred_pose = True
+            pose_data_dict = json.loads(pose_data)
+        else:
+            self.using_pred_pose = False
+
+        if self.obj_type == 'own':
+            obj_data_dict = json.loads(obj_pose_data)
+
+        for i, action in enumerate(self.action_list):
+            temp = action[0]
+            temp = temp.split()
+
+            # Get action labels
+            action_labels.append(int(temp[1]))
+            action_id_num.append(i)
+            # Get frames
+            frames_in_action = []
+            pose_in_action = []
+            obj_in_action = []
+
+            frames_temp_pth = os.path.join(frame_root_pth, temp[0], 'color')
+
+            for filename in os.listdir(frames_temp_pth):
+
+                f = os.path.join(frames_temp_pth, filename)
+                if 'depth_est' in f:
+                    continue
+                # checking if it is a file
+                if os.path.isfile(f):
+                    frames_in_action.append(f)
+
+                    if self.using_pred_pose:
+
+                        temp_hand_pose = pose_data_dict[f]
+                        pose_in_action.append(temp_hand_pose)
+
+                    if self.obj_type == 'own':
+
+                        temp_obj_pose = obj_data_dict[f]
+                        obj_in_action.append(temp_obj_pose)
+
+            action_frames.append(
+                np.array(natsorted(frames_in_action), dtype=str))
+
+            action_hand_pose_predicted.append(pose_in_action)
+            action_obj_pose_predicted.append(obj_in_action)
+
+            # Get GT handpose
+            hand_temp_pth = os.path.join(
+                hand_pose_root_pth, temp[0], 'skeleton.txt')
+            hand_pose_df = pd.read_csv(
+                hand_temp_pth, sep=' ', header=None, index_col=False)
+            hand_pose_df.pop(hand_pose_df.columns[0])
+            action_hand_pose.append(np.array(hand_pose_df.values.tolist()))
+
+        self.action_label = np.array(action_labels)
+        self.action_frames = action_frames
+        self.action_hand_pose = action_hand_pose
+        self.action_id_num = np.array(action_id_num)
+        if self.using_pred_pose:
+            self.action_hand_pose_predicted = action_hand_pose_predicted
+        if self.obj_type == 'own':
+            self.obj_labels = action_obj_pose_predicted
+
+    def __len__(self):
+        return len(self.action_label)
+
+    def __load_handpose_to_tensor(self, frames_list: np.array, hand_pose, indxs_to_sample, obj_label, cam_instr=None) -> torch.tensor:
+
+        frames_list = frames_list[indxs_to_sample]
+        hand_pose = hand_pose[indxs_to_sample]
+
+        transform_replay = None
+
+        # Decide if any of the elements should be masked
+        vanish_fag = False
+        if self.apply_vanishing and self.subset_type == 'train':
+            if random.randint(0, 100) < self.vanishing_proability*100:
+                vanish_fag = True
+
+        transformed_hand_pose_list = []
+        img_list = []
+        for frame, hand_pose, in zip(frames_list, hand_pose):
+            # Load image
+
+            if self.use_image:
+                img_raw = np.array(Image.open(frame))
+
+            # Convert 3D to 2D
+            # Apply camera extrinsic to hand skeleton
+            if self.using_pred_pose:
+                hand_pose.reshape(21, -1)
+                keypoints_raw = hand_pose*(1920, 1080)
+
+            else:
+                skel = hand_pose.reshape(21, -1)
+                skel_hom = np.concatenate(
+                    [skel, np.ones([skel.shape[0], 1])], 1)
+                skel_camcoords = FPHA_CAM_EXTR.dot(
+                    skel_hom.transpose()).transpose()[:, :3].astype(np.float32)
+
+                skel_hom2d = np.array(FPHA_CAM_INSTR).dot(
+                    skel_camcoords.transpose()).transpose()
+                skel_proj = (skel_hom2d / skel_hom2d[:, 2:])[:, :2]
+
+                keypoints_raw = skel_proj[FPHA_RENDER_IDX]
+
+            # Apply albumentations to the sequence
+            if self.albumentation:
+                if self.use_image == False:
+                    img_raw = np.zeros((1080, 1920, 3))
+
+                transformed = albumentation_to_sequence(
+                    img_raw, keypoints_raw, self.albumentation, transform_replay, len(transformed_hand_pose_list))
+
+                if len(transformed_hand_pose_list) == 0:
+                    transform_replay = transformed["replay"]
+
+                # Get augumented data
+                if self.use_image:
+                    img = transformed['image']
+                transformed_keypoints = np.array(transformed["keypoints"])
+
+            # No albumentations:
+            else:
+                transformed_keypoints = keypoints_raw
+
+            # Stacked transformed frames
+            if self.use_image:
+                _, height, width = img.shape
+                img_list.append(img)
+            else:
+                height, width = (1080, 1920)
+
+            # Stacked transformed keypoints
+            transformed_keypoints = transformed_keypoints / (width, height)
+            transformed_keypoints = transformed_keypoints.reshape(42,)
+            transformed_keypoints = np.append(transformed_keypoints, obj_label)
+
+            # Apply reduction of information:
+            if vanish_fag:
+                transformed_keypoints[42] = 0
+
+            transformed_hand_pose_list.append(
+                torch.Tensor(transformed_keypoints))
+
+        if self.use_image:
+            return torch.stack(img_list), torch.stack(transformed_hand_pose_list)
+        else:
+            return torch.stack(transformed_hand_pose_list)
+
+    def __getitem__(self, index) -> None:
+
+        action_id = self.action_id_num[index]
+        action_label = self.action_label[index]
+
+        if self.obj_type == 'GT':
+            obj_name = FPHA_ACTION_TO_OBJ[action_label+1]['object']
+            obj_label = FPHA_OBJ_DICT[obj_name]
+
+        elif self.obj_type == 'own':
+            obj_label = self.obj_labels[index]
+            obj_label = Counter(obj_label).most_common(1)[0][0]
+
+        if self.using_pred_pose:
+
+            hand_pose = self.action_hand_pose_predicted[index]
+        else:
+            hand_pose = self.action_hand_pose[index]
+
+        indxs_to_sample = sample2(
+            input_frames=self.action_frames[index], sampling_type=self.sample_type, no_of_outframes=self.no_of_input_frames)
+        if self.use_image:
+            img_seq, hand_pose_seq = self.__load_handpose_to_tensor(
+                frames_list=np.array(self.action_frames[index]), hand_pose=np.array(hand_pose), indxs_to_sample=indxs_to_sample, obj_label=obj_label)
+        else:
+            hand_pose_seq = self.__load_handpose_to_tensor(
+                frames_list=np.array(self.action_frames[index]), hand_pose=np.array(hand_pose), indxs_to_sample=indxs_to_sample, obj_label=obj_label)
+        return {
+            'action_label': action_label,
+            'action_id': action_id,
+            'keypoints': hand_pose_seq,
+            'obj': obj_label
+        }
+
+
+def get_FPHAB_action_dataset(config, albumentations):
+
+    train_dataset = FPHA_action(
+        data_cfg=config.DataConfig, albumentation=albumentations)
+
+    print("Len of train: ", len(train_dataset))
+
+    train_dataloader = DataLoader(
+        train_dataset,
+        config.TrainingConfigAction.batch_size,
+        shuffle=True,
+        drop_last=False,
+        num_workers=10,
+        pin_memory=True,
+        collate_fn=CollateFPHA(),
+    )
+
+    val_dataset = FPHA_action(data_cfg=config.DataConfig,
+                              albumentation=None,
+                              subset="val")
+
+    print("Len of val: ", len(val_dataset))
+
+    val_dataloader = DataLoader(
+        val_dataset,
+        config.TrainingConfigAction.batch_size,
+        shuffle=False,
+        drop_last=False,
+        num_workers=10,
+        pin_memory=True,
+        collate_fn=CollateFPHA(),
+    )
+
+    return {
+        "train": train_dataloader,
+        "val": val_dataloader
     }

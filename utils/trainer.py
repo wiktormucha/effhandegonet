@@ -2,39 +2,29 @@ import random
 import numpy as np
 import torch
 from tqdm import tqdm
-from utils.general_utils import heatmaps_to_coordinates, heatmaps_to_coordinates_tensor, project_points_2D_to_3D
+from utils.general_utils import heatmaps_to_coordinates
 import wandb
 from utils.testing import batch_epe_calculation
 import torchmetrics as metrics
 import torch.nn as nn
 import torch
-from utils.general_utils import project_points_3D_to_2D, vector_to_heatmaps_tensor
-from dataclasses import dataclass
 import os
 import json
-from dataclasses import dataclass
-import torchvision.transforms as transforms
 import cv2 as cv2
-from datasets.h2o import CAM_INTRS
-from PIL import Image
-from utils.general_utils import (
-    EgocentricModelType,
-    make_model,
-    draw_keypoints_on_single_hand
-)
-
 from utils.testing import (
     batch_epe_calculation,
     batch_auc_calculation,
     batch_pck_calculation,
 )
-from matplotlib import pyplot as plt
+
+from constants import action_to_verb
 # FPHA_SCALE =  (1920, 1080)
 FPHA_SCALE = (1280, 720)
 FREIHAND = True
 # DEBUG = True
 DEBUG = False
 DEBUG_SAMPLES = 10
+softmax = nn.Softmax(dim=1)
 
 
 class TrainerH2O:
@@ -42,7 +32,7 @@ class TrainerH2O:
     Class for training the model
     """
 
-    def __init__(self, model: torch.nn.Module, criterion: torch.nn.Module, optimizer: torch.optim, config: dict, wandb_logger: wandb, scheduler: torch.optim = None, grad_clip: int = None) -> None:
+    def __init__(self, model: torch.nn.Module, criterion: torch.nn.Module, optimizer: torch.optim, config: dict, wandb_logger: wandb, scheduler: torch.optim = None) -> None:
         """
         Initialisation
 
@@ -52,7 +42,6 @@ class TrainerH2O:
             optimizer (torch.optim): Optimiser
             config (dict): Config dictionary (needed max epochs and device)
             scheduler (torch.optim, optional): Learning rate scheduler. Defaults to None.
-            grad_clip (int, optional): Gradient clipping. Defaults to None.
         """
         self.model = model
         self.criterion = criterion
@@ -67,7 +56,6 @@ class TrainerH2O:
         self.early_stopping_avg = 10
         self.early_stopping_precision = 5
         self.best_val_loss = 100000
-        self.grad_clip = grad_clip
         self.wandb_logger = wandb_logger
         self.best_epe = 10000000
 
@@ -282,7 +270,7 @@ class TrainerFreiHAND:
     Class for training the model
     """
 
-    def __init__(self, model: torch.nn.Module, criterion: torch.nn.Module, optimizer: torch.optim, config: dict, wandb_logger: wandb, scheduler: torch.optim = None, grad_clip: int = None) -> None:
+    def __init__(self, model: torch.nn.Module, criterion: torch.nn.Module, optimizer: torch.optim, config: dict, wandb_logger: wandb, scheduler: torch.optim = None) -> None:
         """
         Initialisation
 
@@ -292,7 +280,6 @@ class TrainerFreiHAND:
             optimizer (torch.optim): Optimiser
             config (dict): Config dictionary (needed max epochs and device)
             scheduler (torch.optim, optional): Learning rate scheduler. Defaults to None.
-            grad_clip (int, optional): Gradient clipping. Defaults to None.
         """
         self.model = model
         self.criterion = criterion
@@ -307,7 +294,6 @@ class TrainerFreiHAND:
         self.early_stopping_avg = 10
         self.early_stopping_precision = 5
         self.best_val_loss = 100000
-        self.grad_clip = grad_clip
         self.wandb_logger = wandb_logger
         self.best_epe = 10000000
         self.one_batch_flag = config.one_batch_flag
@@ -463,7 +449,7 @@ class Trainer_FPHA:
     Class for training the model
     """
 
-    def __init__(self, model: torch.nn.Module, criterion: torch.nn.Module, optimizer: torch.optim, config: dict, wandb_logger: wandb, scheduler: torch.optim = None, grad_clip: int = None) -> None:
+    def __init__(self, model: torch.nn.Module, criterion: torch.nn.Module, optimizer: torch.optim, config: dict, wandb_logger: wandb, scheduler: torch.optim = None) -> None:
         """
         Initialisation
 
@@ -473,7 +459,6 @@ class Trainer_FPHA:
             optimizer (torch.optim): Optimiser
             config (dict): Config dictionary (needed max epochs and device)
             scheduler (torch.optim, optional): Learning rate scheduler. Defaults to None.
-            grad_clip (int, optional): Gradient clipping. Defaults to None.
         """
         self.model = model
         self.criterion = criterion
@@ -488,13 +473,16 @@ class Trainer_FPHA:
         self.early_stopping_avg = 10
         self.early_stopping_precision = 5
         self.best_val_loss = 100000
-        self.grad_clip = grad_clip
         self.wandb_logger = wandb_logger
-        self.run_name = config.run_name
         self.best_epe = 10000000
         self.one_batch_flag = config.one_batch_flag
         self.obj_accuracy = []
         self.scaler = torch.cuda.amp.GradScaler(enabled=True)
+
+        if wandb_logger:
+            self.run_name = wandb_logger.name
+        else:
+            self.run_name = f'debug_{random.randint(0,100000)}'
 
     def train(self, train_dataloader: torch.utils.data.DataLoader, val_dataloader: torch.utils.data.DataLoader) -> torch.nn.Module:
         """
@@ -672,6 +660,7 @@ class Trainer_FPHA:
         pths_list = []
         pose_list = []
         obj_list = []
+        confidence_list = []
         pck_2d = []
         auc_lst = []
         correct = 0
@@ -717,6 +706,13 @@ class Trainer_FPHA:
                     running_loss.append(loss.item())
 
                 pose_list += pred_keypoints_np.tolist()
+                # get confidence of predictions
+
+                pred_obj = softmax(pred_obj)
+                # pred_obj = torch.argmax(pred_obj, dim=1)
+                obj_confidence, pred_obj = torch.max(pred_obj, dim=1)
+                obj_list += pred_obj.cpu().detach().tolist()
+                confidence_list += obj_confidence.cpu().detach().tolist()
                 acc_obj = accuracy(pred_obj, obj_label).cpu().detach().numpy()
                 acc_lst.append(acc_obj)
 
@@ -731,8 +727,20 @@ class Trainer_FPHA:
             output_dict_pose = {pths_list[i]: pose_list[i]
                                 for i in range(len(pose_list))}
 
+            output_dict_obj = {pths_list[i]: obj_list[i]
+                               for i in range(len(pose_list))}
+
+            output_dict_confidence = {pths_list[i]: confidence_list[i]
+                                      for i in range(len(pose_list))}
+
             with open("pred_poses_asdf2_train.txt", "w") as fp:
                 json.dump(output_dict_pose, fp)  # encode dict into JSON
+
+            with open("pred_obj.txt", "w") as fp:
+                json.dump(output_dict_obj, fp)  # encode dict into JSON
+
+            with open("pred_confidence_tuple.txt", "w") as fp:
+                json.dump(output_dict_confidence, fp)
 
             print('Loss: ', epoch_loss)
             print('EPE: ', epe_loss)
@@ -747,45 +755,387 @@ class Trainer_FPHA:
         return batch_epe_calculation(preds, labels, batch_mask)
 
 
-# def effhandegonet_to_keypoints(preds, org_image_size: tuple):
-#     activation = nn.Sigmoid()
+class TrainerFPHAAction:
+    """
+    Class for training the model
+    """
 
-#     left_batch_mask = torch.argmax(
-#         activation(preds['left_handness']), dim=1).cpu().detach().numpy()
-#     right_batch_mask = torch.argmax(
-#         activation(preds['right_handness']), dim=1).cpu().detach().numpy()
+    def __init__(self, model: torch.nn.Module, criterion: torch.nn.Module, optimizer: torch.optim, training_config, model_config, wandb_logger: wandb, scheduler: torch.optim = None) -> None:
+        """
+        Initialisation
+        Args:
+            model (torch.nn.Module): Input modle used for training
+            criterion (torch.nn.Module): Loss function
+            optimizer (torch.optim): Optimiser
+            config (dict): Config dictionary (needed max epochs and device)
+            scheduler (torch.optim, optional): Learning rate scheduler. Defaults to None.
+        """
+        self.model = model
+        self.criterion = criterion
+        self.optimizer = optimizer
+        self.loss = {"train": [], "val": [], "test": []}
+        self.epochs = training_config.max_epochs
+        self.device = training_config.device
+        self.scheduler = scheduler
+        self.early_stopping_epochs = training_config.early_stopping
+        self.early_stopping_avg = 10
+        self.early_stopping_precision = 5
+        self.best_val_loss = 100000
+        self.best_acc_val = 0
+        self.wandb_logger = wandb_logger
+        self.acc_val = []
+        self.acc_test = []
 
-#     pred_left_np = heatmaps_to_coordinates(
-#         preds['left_2D_pose'].cpu().detach().numpy(), img_size=preds['left_2D_pose'].shape[3]) * org_image_size
-#     pred_right_np = heatmaps_to_coordinates(
-#         preds['right_2D_pose'].cpu().detach().numpy(), img_size=preds['right_2D_pose'].shape[3]) * org_image_size
+        if wandb_logger:
+            self.run_name = wandb_logger.name
+        else:
+            self.run_name = f'debug_{random.randint(0,100000)}'
 
-#     z_l = preds['z_depth_l'].cpu().detach().numpy().reshape(-1, 21, 1)
-#     z_r = preds['z_depth_r'].cpu().detach().numpy().reshape(-1, 21, 1)
-#     assembly_handness = []
-#     keypoints25d = []
+    def train(self, train_dataloader: torch.utils.data.DataLoader, val_dataloader: torch.utils.data.DataLoader) -> torch.nn.Module:
+        """
+        Training loop
+        Args:
+            train_dataloader (torch.utils.data.DataLoader): Training dataloader
+            val_dataloader (torch.utils.data.DataLoader): Validation dataloader
+        Returns:
+            torch.nn.Module: Trained model
+        """
+        for epoch in range(self.epochs):
+            self._epoch_train(train_dataloader)
+            self._epoch_eval(val_dataloader)
 
-#     pts_left = np.concatenate((pred_left_np, z_l), axis=2)
-#     pts_right = np.concatenate((pred_right_np, z_r), axis=2)
+            print(
+                "Epoch: {}/{}, Train Loss={}, Val Loss={}, Val Acc={}".format(
+                    epoch + 1,
+                    self.epochs,
+                    np.round(self.loss["train"][-1], 10),
+                    np.round(self.loss["val"][-1], 10),
+                    self.acc_val[-1],
+                )
+            )
+            # reducing LR if no improvement in training
+            if self.scheduler is not None:
+                self.scheduler.step()
 
-#     kps = np.concatenate((pts_left, pts_right), axis=1)
-#     return {'keypoints2d_left': pred_left_np,  # 2D Points in original img space
-#             'keypoints2d_right': pred_right_np,  # 2D Points in original img space
-#             'assembly_handness': assembly_handness,
-#             'keypoints25d_img': keypoints25d,
-#             'pred_kpts25d_norm': kps,
-#             }
+            self.best_acc_val = save_best_model(self.model, self.run_name,
+                                                self.acc_val[-1], self.best_acc_val, 'greater_than')
+
+            # early stopping if no progress
+            if epoch < self.early_stopping_avg:
+                min_val_loss = np.round(
+                    np.mean(self.loss["val"]), self.early_stopping_precision)
+                no_decrease_epochs = 0
+
+            else:
+                val_loss = np.round(
+                    np.mean(self.loss["val"][-self.early_stopping_avg:]),
+                    self.early_stopping_precision
+                )
+                if val_loss >= min_val_loss:
+                    no_decrease_epochs += 1
+                else:
+                    min_val_loss = val_loss
+                    no_decrease_epochs = 0
+
+            self.wandb_logger.log({"acc": self.acc_val[-1], "train_loss": np.round(
+                self.loss["train"][-1], 10), "val_loss": np.round(self.loss["val"][-1], 10), "best_acc": self.best_acc_val})
+
+            if no_decrease_epochs > self.early_stopping_epochs:
+                print("Early Stopping")
+                break
+
+        torch.save(self.model.state_dict(), f'final')
+        return self.model
+
+    def _epoch_train(self, dataloader: torch.utils.data.DataLoader):
+        """
+        Training step in epoch
+        Args:
+            dataloader (torch.utils.data.DataLoader): Dataloader
+        """
+        self.model.train()
+        running_loss = []
+
+        for i, data in enumerate(tqdm(dataloader, 0)):
+
+            inputs = data['keypoints'].to(self.device)
+            labels = data['action_label'].to(self.device)
+            self.optimizer.zero_grad()
+
+            outputs = self.model(inputs)
+
+            loss = self.criterion(outputs, labels)
+            loss.backward()
+
+            self.optimizer.step()
+
+            running_loss.append(loss.item()*labels.shape[0])
+
+        epoch_loss = sum(running_loss)/len(dataloader.dataset)
+        self.loss["train"].append(epoch_loss)
+
+    def test_model(self, test_dataloader: torch.utils.data.DataLoader):
+        acc = []
+        self.__evaluation(dataloader=test_dataloader,
+                          loss_list=self.loss["test"], acc_list=acc)
+        print('Acc: ', np.mean(acc), ' Loss: ', self.loss["test"][-1])
+
+    def __evaluation(self, dataloader: torch.utils.data.DataLoader, loss_list, acc_list):
+
+        self.model.eval()
+        running_loss = []
+        Accuracy = metrics.Accuracy(
+            task="multiclass", num_classes=45).to(self.device)
+        acc_lst = []
+
+        with torch.no_grad():
+
+            for i, data in enumerate(dataloader, 0):
+
+                inputs = data['keypoints'].to(self.device)
+                labels = data['action_label'].to(self.device)
+
+                outputs = self.model(inputs)
+
+                loss = self.criterion(outputs, labels)
+                running_loss.append(loss.item()*labels.shape[0])
+                prob = outputs.softmax(dim=1)
+                acc = Accuracy(prob, labels)
+                acc_lst.append(acc*labels.shape[0])
+
+            epoch_loss = sum(running_loss)/len(dataloader.dataset)
+            loss_list.append(epoch_loss)
+            accuracy = sum(acc_lst)/len(dataloader.dataset)
+            acc_list.append(accuracy.cpu().numpy())
+
+    def _epoch_eval(self, dataloader: torch.utils.data.DataLoader):
+        """
+        Evaluation step in epoch
+        Args:
+            dataloader (torch.utils.data.DataLoader): Dataloader
+        """
+        self.__evaluation(dataloader=dataloader,
+                          loss_list=self.loss["val"], acc_list=self.acc_val)
 
 
-# def display_tensor_image(tensor):
-#     # if tensor.shape != (3, 256, 256):
-#     #     raise ValueError('The tensor does not have the correct shape (3, 256, 256)')
+class TrainerH2OAction:
+    """
+    Class for training the model
+    """
 
-#     tensor = tensor.permute(1, 2, 0)  # Make channels last
-#     tensor = (tensor - tensor.min()) / (tensor.max() -
-#                                         tensor.min())  # Normalize to [0, 1]
+    def __init__(self, model: torch.nn.Module, criterion: torch.nn.Module, optimizer: torch.optim, training_config, model_config, wandb_logger: wandb, scheduler: torch.optim = None) -> None:
+        """
+        Initialisation
+        Args:
+            model (torch.nn.Module): Input modle used for training
+            criterion (torch.nn.Module): Loss function
+            optimizer (torch.optim): Optimiser
+            config (dict): Config dictionary (needed max epochs and device)
+            scheduler (torch.optim, optional): Learning rate scheduler. Defaults to None.
+        """
+        self.model = model
+        self.criterion = criterion
+        self.optimizer = optimizer
+        self.loss = {"train": [], "val": [], "test": []}
+        self.epochs = training_config.max_epochs
+        self.device = training_config.device
+        self.scheduler = scheduler
+        self.early_stopping_epochs = training_config.early_stopping
+        self.early_stopping_avg = 10
+        self.early_stopping_precision = 5
+        self.best_val_loss = 100000
+        self.best_acc_val = 0
+        self.wandb_logger = wandb_logger
+        self.acc_val = []
+        self.acc_test = []
 
-#     return tensor
+        if wandb_logger:
+            self.run_name = wandb_logger.name
+        else:
+            self.run_name = f'debug_{random.randint(0,100000)}'
+
+    def train(self, train_dataloader: torch.utils.data.DataLoader, val_dataloader: torch.utils.data.DataLoader) -> torch.nn.Module:
+        """
+        Training loop
+        Args:
+            train_dataloader (torch.utils.data.DataLoader): Training dataloader
+            val_dataloader (torch.utils.data.DataLoader): Validation dataloader
+        Returns:
+            torch.nn.Module: Trained model
+        """
+        for epoch in range(self.epochs):
+            self._epoch_train(train_dataloader)
+            self._epoch_eval(val_dataloader)
+            print(
+                "Epoch: {}/{}, Train Loss={}, Val Loss={}, Val Acc={}".format(
+                    epoch + 1,
+                    self.epochs,
+                    np.round(self.loss["train"][-1], 10),
+                    np.round(self.loss["val"][-1], 10),
+                    self.acc_val[-1],
+                )
+            )
+
+            # reducing LR if no improvement in training
+            if self.scheduler is not None:
+                self.scheduler.step()
+
+            self.best_acc_val = save_best_model(model=self.model, run_name=self.run_name, new_value=np.round(
+                self.acc_val[-1], 10), best_value=self.best_acc_val, save_on_type="greater_than")
+
+            # early stopping if no progress
+            if epoch < self.early_stopping_avg:
+                min_val_loss = np.round(
+                    np.mean(self.loss["val"]), self.early_stopping_precision)
+                no_decrease_epochs = 0
+
+            else:
+                val_loss = np.round(
+                    np.mean(self.loss["val"][-self.early_stopping_avg:]),
+                    self.early_stopping_precision
+                )
+                if val_loss >= min_val_loss:
+                    no_decrease_epochs += 1
+                else:
+                    min_val_loss = val_loss
+                    no_decrease_epochs = 0
+
+            if self.wandb_logger:
+                self.wandb_logger.log(
+                    {"acc": self.acc_val[-1],
+                     "train_loss": np.round(
+                        self.loss["train"][-1], 10),
+                        "val_loss": np.round(self.loss["val"][-1], 10),
+                        "best_acc": self.best_acc_val,
+                     })
+
+            if no_decrease_epochs > self.early_stopping_epochs:
+                print("Early Stopping")
+                break
+
+        torch.save(self.model.state_dict(), f'final')
+        return self.model
+
+    def _epoch_train(self, dataloader: torch.utils.data.DataLoader):
+        """
+        Training step in epoch
+        Args:
+            dataloader (torch.utils.data.DataLoader): Dataloader
+        """
+        self.model.train()
+        running_loss = []
+
+        for i, data in enumerate(tqdm(dataloader, 0)):
+
+            inputs = data['positions'].to(
+                self.device).type(torch.cuda.FloatTensor)
+
+            labels = data['action_label'].to(self.device)
+            self.optimizer.zero_grad()
+
+            outputs = self.model(inputs)
+
+            loss = self.criterion(outputs, labels)
+            loss.backward()
+
+            self.optimizer.step()
+            running_loss.append(loss.item()*labels.shape[0])
+
+        epoch_loss = sum(running_loss)/len(dataloader.dataset)
+        self.loss["train"].append(epoch_loss)
+
+    def test_model(self, test_dataloader: torch.utils.data.DataLoader):
+        self.__evaluation(dataloader=test_dataloader,
+                          loss_list=self.loss["test"], acc_list=self.acc_test)
+        print('Acc: ', self.acc_test[-1], ' Loss: ', self.loss["test"][-1])
+
+    def __evaluation(self, dataloader: torch.utils.data.DataLoader, loss_list, acc_list):
+
+        self.model.eval()
+        running_loss = []
+        Accuracy = metrics.Accuracy(
+            task="multiclass", num_classes=37).to(self.device)
+        Accuracy2 = metrics.Accuracy(
+            task="multiclass", num_classes=37).to(self.device)
+        acc_lst = []
+        acc_verbs = []
+        y_true_all = np.array([])
+        y_pred_all = np.array([])
+
+        with torch.no_grad():
+
+            for i, data in enumerate(dataloader, 0):
+
+                inputs = data['positions'].to(
+                    self.device).type(torch.cuda.FloatTensor)
+                labels = data['action_label'].to(self.device)
+
+                outputs = self.model(inputs)
+
+                loss = self.criterion(outputs, labels)
+                running_loss.append(loss.item()*labels.shape[0])
+                prob = softmax(outputs)
+
+                indxs = torch.argmax(prob, dim=1)
+                acc = Accuracy(prob, labels)
+
+                verb_preds = torch.tensor(
+                    [action_to_verb[int(x)] for x in indxs])
+                verb_labels = torch.tensor(
+                    [action_to_verb[int(x)] for x in labels])
+
+                y_true_all = np.append(y_true_all, verb_labels)
+                y_pred_all = np.append(y_pred_all, verb_preds)
+
+                acc_verb = Accuracy2(verb_preds, verb_labels)
+                acc_verbs.append(acc_verb*labels.shape[0])
+
+                acc_lst.append(acc*labels.shape[0])
+            epoch_loss = sum(running_loss)/len(dataloader.dataset)
+            loss_list.append(epoch_loss)
+            accuracy = sum(acc_lst)/len(dataloader.dataset)
+            accuracy_verb = sum(acc_verbs)/len(dataloader.dataset)
+            print('Acc verb: ', accuracy_verb.item())
+            acc_list.append(accuracy.cpu().numpy())
+
+    def test_h2o(self, dataloader: torch.utils.data.DataLoader):
+
+        self.model.eval()
+
+        h2o_test_results = {
+            "modality": "hand+obj",
+        }
+        with torch.no_grad():
+
+            for i, data in enumerate(dataloader, 0):
+
+                inputs = data['positions'].to(
+                    self.device).type(torch.cuda.FloatTensor)
+
+                outputs = self.model(inputs)
+                prob = softmax(outputs)
+                # In prob of shape 64, 36 pick the highest value in each row
+
+                indxs = torch.argmax(prob, dim=1)
+
+                for key, value in zip(data['action_id'], indxs):
+                    h2o_test_results[int(key)] = int(value)
+
+            print(f'Len of dict: {len(h2o_test_results)}')
+            with open("action_labels.json", "w") as fp:
+                json.dump(h2o_test_results, fp)
+            os.system('rm answear.zip')
+            os.system('zip answear.zip action_labels.json')
+            return h2o_test_results
+
+    def _epoch_eval(self, dataloader: torch.utils.data.DataLoader):
+        """
+        Evaluation step in epoch
+        Args:
+            dataloader (torch.utils.data.DataLoader): Dataloader
+        """
+        self.__evaluation(dataloader=dataloader,
+                          loss_list=self.loss["val"], acc_list=self.acc_val)
 
 
 def save_best_model(model, run_name, new_value: float, best_value, save_on_type: str):

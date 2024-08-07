@@ -1,0 +1,40 @@
+# ModelConfig
+model_type: ActionTransformer
+input_dim: 43 #109 #190
+hidden_layers: 42
+out_dim: 45 # Number of class H2O = 37, FPHAB = 45
+dropout: 0.2
+dropout_att: 0.2
+trans_num_layers: 2
+trans_num_heads: 2
+seq_length: 20
+load_checkpoint: True
+checkpoint_path: 'saved_models/EffHandEgoNet_FPHAB_Action.pth'
+# TrainingConfigAction
+seed_num: 44
+max_epochs: 3000
+batch_size: 64
+device: 7
+early_stopping: 500
+scheduler_steps: [100, 1000, 2000]
+wandb_name: 'FPHA_action_recognition'
+run_type: 'test'
+debug: True
+#DataConfig
+dataset: 'fpha'
+data_dir: '/data/wmucha/datasets/FPHAB'
+annotation_train: ''
+no_of_input_frames: 20
+using_obj_bb: True
+using_obj_label: True
+hand_pose_type: 'ego_handpoints'
+obj_pose_type: 'GT'
+apply_vanishing: False
+vanishing_proability: 0.1
+obj_to_vanish: 3
+albumentation_pth: 'cfgs/albumentations/fphab_8.py'
+#OptimizerConfig
+type: AdamW
+lr: 5e-3
+weight_decay: 1e-4
+momentum: 0.0

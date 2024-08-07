@@ -1,0 +1,40 @@
+# ModelConfig
+model_type: ActionTransformer
+input_dim: 93 #109 #190
+hidden_layers: 42
+out_dim: 37
+dropout: 0.2
+dropout_att: 0.2
+trans_num_layers: 2
+trans_num_heads: 2
+seq_length: 20
+load_checkpoint: True
+checkpoint_path: 'saved_models/EffHandEgoNet_H2O_Action.pth'
+# TrainingConfigAction
+seed_num: 50
+max_epochs: 1500
+batch_size: 64
+device: 0
+early_stopping: 500
+wandb_name: 'h2o_action_recognition_trans_own_pose'
+scheduler_steps: [900, 1100, 1300, 1500, 1700, 1900]
+run_type: 'test'
+debug: False
+#DataConfig
+dataset: 'h2o'
+data_dir: '/data/wmucha/datasets/h2o_ego/h2o_ego'
+annotation_train: '/caa/Homes01/wmucha/datasets/h2o_CASA'
+no_of_input_frames: 20
+using_obj_bb: True
+using_obj_label: True
+hand_pose_type: 'gt_hand_pose'
+obj_pose_type: 'GT'
+apply_vanishing: True
+vanishing_proability: 0.3
+obj_to_vanish: 3
+albumentation_pth: 'cfgs/albumentations/albu_7.py'
+#OptimizerConfig
+type: AdamW
+lr: 1e-3
+weight_decay: 1e-4
+momentum: 0.0

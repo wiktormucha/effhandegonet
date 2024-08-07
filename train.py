@@ -15,16 +15,7 @@ import yaml
 from datasets.FPHA import get_FPHAB_dataset
 from constants import ALBUMENTATION_TRAIN
 from utils.loses import FPHALoss
-
-MAX_NUM_THREADS = 16
-
-
-def freeze_seeds(seed_num=42):
-
-    torch.set_num_threads(MAX_NUM_THREADS)
-    torch.manual_seed(seed_num)
-    random.seed(seed_num)
-    np.random.seed(seed_num)
+from utils.general_utils import freeze_seeds
 
 
 def main() -> None:
@@ -112,10 +103,10 @@ def main() -> None:
         raise ValueError('Dataset not supported')
 
     print(f'Starting training on device: {cfg.TrainingConfig.device}')
-    model = trainer.train(
-        train_dataloader=dataloader['train'], val_dataloader=dataloader['val'])
+    # model = trainer.train(
+    #     train_dataloader=dataloader['train'], val_dataloader=dataloader['val'])
 
-    # trainer.predict(dataloader['val'])
+    trainer.predict(dataloader['val'])
 
     if cfg.TrainingConfig.debug:
         wandb.finish()

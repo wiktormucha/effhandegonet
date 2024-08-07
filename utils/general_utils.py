@@ -7,6 +7,8 @@ import torch.optim as optim
 import importlib.util
 import matplotlib.pyplot as plt
 from enum import Enum
+import random
+import yaml
 
 
 class EgocentricModelType(Enum):
@@ -14,6 +16,26 @@ class EgocentricModelType(Enum):
     effhandegonet = 'EffHandEgoNet'
     effhandnet = 'EffHandNet'
     poseresnet50 = 'PoseResNet50'
+
+
+def freeze_seeds(seed_num=42, max_num_threads=16):
+
+    torch.set_num_threads(max_num_threads)
+    torch.manual_seed(seed_num)
+    random.seed(seed_num)
+    np.random.seed(seed_num)
+    print('Seed set to:', seed_num)
+
+
+def define_optimizer(model, optimizer_cfg):
+
+    if optimizer_cfg.type == 'SGD':
+        optimizer = optim.SGD(model.parameters(
+        ), lr=optimizer_cfg.lr, weight_decay=optimizer_cfg.weight_decay, momentum=optimizer_cfg.momentum)
+    elif optimizer_cfg.type == 'AdamW':
+        optimizer = optim.AdamW(
+            model.parameters(), lr=optimizer_cfg.lr, weight_decay=optimizer_cfg.weight_decay)
+    return optimizer
 
 
 def count_parameters(model: nn.Module) -> int:
@@ -360,3 +382,34 @@ def tensor_to_numpy(tensor):
     img = tensor.cpu().numpy()
     img = np.transpose(img, (1, 2, 0))
     return img
+
+
+def make_model_action(model_cfg, device, dataset, parameter_info=True):
+    model = getattr(models, model_cfg.model_type)(
+        model_cfg, device=device, dataset=dataset)
+    model = model.to(device)
+
+    print(f'Model created on device: {device}')
+
+    # If loading weights from checkpoin
+    if model_cfg.load_checkpoint:
+        model.load_state_dict(torch.load(
+            model_cfg.checkpoint_path, map_location=torch.device(device)))
+        print("Model's checkpoint loaded")
+
+    if parameter_info:
+        print(sum(p.numel() for p in model.parameters() if p.requires_grad))
+
+    return model
+
+
+def get_wandb_cfg(wandbcfg_pth):
+    with open(wandbcfg_pth, 'r') as stream:
+        try:
+            # Converts yaml document to python object
+            wandbcfg = yaml.safe_load(stream)
+        # Program to convert yaml file to dictionary
+        except yaml.YAMLError as e:
+            print(e)
+
+    return wandbcfg
