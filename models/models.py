@@ -1,4 +1,4 @@
-from models.backbones import BackboneModel, BackboneModel
+from models.backbones import BackboneModel
 from models.heads import SimpleHead5
 import torch
 import torch.nn as nn
@@ -60,23 +60,25 @@ class SimpleHead50(nn.Module):
         return x
 
 
-class HandUpSampler(nn.Module):
-    def __init__(self, inpt_channels, *args, **kwargs) -> None:
+class ResNet50(nn.Module):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
-        self.sampler = nn.Sequential(
-            DeconvolutionLayer2(
-                inpt_channels, 256, kernel_size=4, stride=2, padding=1, last=False),
-            DeconvolutionLayer2(
-                256, 256, kernel_size=4, stride=2, padding=1, last=False),
-            DeconvolutionLayer2(
-                256, 256, kernel_size=4, stride=2, padding=1, last=True),
-            nn.Conv2d(256, 21, kernel_size=1, stride=1)
-        )
+        resnet50 = torch.hub.load(
+            'NVIDIA/DeepLearningExamples:torchhub', 'nvidia_resnet50', pretrained=True)
+        self.resnet50_backbone = torch.nn.Sequential(
+            *(list(resnet50.children())[:-2]))
+
+        self.left_hand = nn.Linear(in_features=(131072), out_features=2)
+        self.right_hand = nn.Linear(in_features=(131072), out_features=2)
+        self.pooling = nn.MaxPool2d(2)
+        self.left_pose = SimpleHead50(in_channels=2048)
+        self.right_pose = SimpleHead50(in_channels=2048)
 
     def forward(self, x):
-
-        return self.sampler(x)
+        features = self.resnet50_backbone(x)
+        flatten = torch.flatten(self.pooling(features), 1)
+        return self.left_hand(flatten), self.right_hand(flatten), self.left_pose(features), self.right_pose(features)
 
 
 class ConvNext3Egocentric(nn.Module):
@@ -148,54 +150,6 @@ class SwinV2Egocentric(nn.Module):
         return self.left_hand(flatten), self.right_hand(flatten), self.left_pose(features), self.right_pose(features)
 
 
-# class NewModel(nn.Module):
-#     def __init__(self, *args, **kwargs) -> None:
-#         super().__init__(*args, **kwargs)
-
-#         resnet50 = torch.hub.load(
-#             'NVIDIA/DeepLearningExamples:torchhub', 'nvidia_resnet50', pretrained=True)
-#         self.resnet50_backbone = torch.nn.Sequential(
-#             *(list(resnet50.children())[:-2]))
-
-#         # self.left = HandUpSampler(inpt_channels=2048)
-#         # self.right = HandUpSampler(inpt_channels=2048)
-#         # self.left_prob = nn.Sigmoid()
-#         # self.right_prob = nn.Sigmoid()
-
-#         self.left_hand = nn.Linear(in_features=(131072), out_features=2)
-#         self.right_hand = nn.Linear(in_features=(131072), out_features=2)
-#         self.pooling = nn.MaxPool2d(2)
-
-#         # self.left_pose = nn.Sequential(
-#         #     HandUpSampler(inpt_channels=1280),
-#         #     nn.Sigmoid()
-#         # )
-
-#         self.left_pose = SimpleHead50(in_channels=2048)
-
-#         # self.right_pose = nn.Sequential(
-#         #     HandUpSampler(inpt_channels=1280),
-#         #     nn.Sigmoid()
-#         # )
-
-#         self.right_pose = SimpleHead50(in_channels=2048)
-
-#     def forward(self, x):
-#         features = self.resnet50_backbone(x)
-#         # print(features.shape)
-#         # left = self.left(features)
-#         # right = self.right(features)
-
-#         flatten = torch.flatten(self.pooling(features), 1)
-#         # print(flatten.shape)
-#         # left_hand = self.left_hand(flatten)
-#         # right_hand = self.right_hand(flatten)
-
-#         # return None, None, None, features
-#         return self.left_hand(flatten), self.right_hand(flatten), self.left_pose(features), self.right_pose(features)
-#         # return self.left_prob(left), self.right_prob(right)
-
-
 class EffHandEgoNet_FPHAB(nn.Module):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -221,7 +175,7 @@ class EffHandEgoNet_FPHAB(nn.Module):
             param.requires_grad = False
 
 
-class CustomEgocentric(nn.Module):
+class EffHandEgoNet(nn.Module):
     def __init__(self, handness_in: int = 81920, handness_out: int = 2, *args, **kwargs) -> None:
         """Initilise the model
         Args:
@@ -260,44 +214,6 @@ class CustomEgocentric(nn.Module):
             'left_2D_pose': self.left_pose(features),
             'right_2D_pose': self.right_pose(features),
         }
-
-
-# class CustomEgocentricSingle(nn.Module):
-#     def __init__(self, *args, **kwargs) -> None:
-#         super().__init__(*args, **kwargs)
-
-#         self.backbone = BackboneModel()
-
-#         # self.left_hand = nn.Linear(in_features=81920, out_features=2)
-#         # self.right_hand = nn.Linear(in_features=81920, out_features=2)
-#         # self.pooling = nn.MaxPool2d(2)
-
-#         # self.left_pose = nn.Sequential(
-#         #     HandUpSampler(inpt_channels=1280),
-#         #     nn.Sigmoid()
-#         # )
-
-#         # self.left_pose = SimpleHead50()
-
-#         # self.right_pose = nn.Sequential(
-#         #     HandUpSampler(inpt_channels=1280),
-#         #     nn.Sigmoid()
-#         # )
-
-#         self.right_pose = SimpleHead50()
-
-#     def forward(self, x):
-#         features = self.backbone(x)
-#         # left = self.left(features)
-#         # right = self.right(features)
-
-#         # flatten = torch.flatten(self.pooling(features), 1)
-#         # left_hand = self.left_hand(flatten)
-#         # right_hand = self.right_hand(flatten)
-
-#         # return None, None, None, features
-#         # , self.left_pose(features),
-#         return self.right_pose(features)
 
 
 class EffHandNet(nn.Module):
@@ -381,16 +297,6 @@ class TransformerEncoder(nn.Module):
         return enc_out
 
 
-def get_positional_embeddings(sequence_lenght, d, device, freq=10000):
-    result = torch.ones(sequence_lenght, d)
-    for i in range(sequence_lenght):
-        for j in range(d):
-            result[i][j] = np.sin(i / (freq ** (j / d)) if j %
-                                  2 == 0 else np.cos(i / (freq ** ((j - 1) / d))))
-
-    return result.to(device)
-
-
 class ActionTransformer(nn.Module):
     def __init__(self, model_cfg, input_dim=126, out_dim=37, device=0, dataset='h2o') -> None:
         super().__init__()
@@ -453,3 +359,13 @@ class ActionTransformer(nn.Module):
         out = self.mlp(out)
 
         return out
+
+
+def get_positional_embeddings(sequence_lenght, d, device, freq=10000):
+    result = torch.ones(sequence_lenght, d)
+    for i in range(sequence_lenght):
+        for j in range(d):
+            result[i][j] = np.sin(i / (freq ** (j / d)) if j %
+                                  2 == 0 else np.cos(i / (freq ** ((j - 1) / d))))
+
+    return result.to(device)

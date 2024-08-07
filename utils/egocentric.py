@@ -12,6 +12,7 @@ from utils.general_utils import (
 )
 import pandas as pd
 from utils.hand_detector import get_mediapipe_kpts, crop_image
+from constants import TRAIN_DATASET_MEANS, TRAIN_DATASET_STDS
 
 
 def run_model_on_hands(model: torch.nn.Module, imgs: np.array, device, model_type: str) -> np.array:
@@ -134,17 +135,14 @@ def get_egocentric_prediction_mediapipe(img, hand_model, pred_hand_left, pred_ha
 
 
 def get_egocentric_predictions_effhandegonet(img, hand_model, activation, pred_hand_left, pred_hand_right):
-    # activation = torch.nn.Softmax(dim=1)
+
 
     if img.shape[0] != 1:
         raise ValueError(
             "Wrong input shape, tensor requires batch size =1: ", img.shape)
 
     out = hand_model(img)
-    #   'left_handness': self.left_hand(flatten),
-    #         'right_handness': self.right_hand(flatten),
-    #         'left_2D_pose': self.left_pose(features),
-    #         'right_2D_pose': self.right_pose(features),
+ 
     pred_left_flag = out['left_handness']
     pred_right_flag = out['right_handness']
     pred_left = out['left_2D_pose']

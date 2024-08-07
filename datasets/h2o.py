@@ -13,6 +13,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 import random
 from datasets.common_data_utils import sample2, albumentation_to_sequence
+from utils.egocentric import read_yolo_labels
 
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -257,7 +258,6 @@ class H2O_actions(Dataset):
 
     def __init__(self, data_cfg, albumentations: A = None, subset_type: str = 'train') -> None:
         super().__init__()
-
 
         # Cfg parser
 
@@ -563,33 +563,6 @@ def vanish_keypoints(keypoints: np.array, obj_to_vanish: int) -> np.array:
         keypoints[92] = 0
 
     return keypoints
-
-
-class YoloLabel:
-    label: int
-    xc: float
-    yc: float
-    width: float
-    height: float
-
-
-def read_yolo_labels(yolo_labels: pd.DataFrame, bb_factor=1):
-    ret_dict = {}
-    for idx, row in yolo_labels.iterrows():
-        temp_obj = YoloLabel()
-        # row = row[0]
-        temp_obj.label = int(row[0])
-        temp_obj.xc = float(row[1])
-        temp_obj.yc = float(row[2])
-        temp_obj.width = float(row[3]) * bb_factor
-        temp_obj.height = float(row[4]) * bb_factor
-
-        if temp_obj.label not in ret_dict:
-            ret_dict[temp_obj.label] = [temp_obj]
-        else:
-            ret_dict[temp_obj.label].append(temp_obj)
-
-    return ret_dict
 
 
 def get_H2O_actions_dataloader(config, albumentations=None):

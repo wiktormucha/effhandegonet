@@ -22,53 +22,12 @@ def own_distances(preds, targets, mask=None, normalize=None):
             If target keypoints are missing, the distance is -1.
     """
     N, K, _ = preds.shape
-    # _mask = mask.copy()
-    # _mask[np.where((normalize == 0).sum(1))[0], :] = False
-    # distances = np.full((N, K), -1, dtype=np.float32)
-    # normalize[np.where(normalize <= 0)] = 1e6
     own_dist = preds - targets
     arr2 = np.square(own_dist)
     h2 = arr2.sum(axis=2)
     dist = np.sqrt(h2)
 
     return dist
-
-
-def _calc_distances(preds, targets, mask, normalize):
-    """Calculate the normalized distances between preds and target.
-
-    Note:
-        batch_size: N
-        num_keypoints: K
-        dimension of keypoints: D (normally, D=2 or D=3)
-
-    Args:
-        preds (np.ndarray[N, K, D]): Predicted keypoint location.
-        targets (np.ndarray[N, K, D]): Groundtruth keypoint location.
-        mask (np.ndarray[N, K]): Visibility of the target. False for invisible
-            joints, and True for visible. Invisible joints will be ignored for
-            accuracy calculation.
-        normalize (np.ndarray[N, D]): Typical value is heatmap_size
-
-    Returns:
-        np.ndarray[K, N]: The normalized distances. 
-            If target keypoints are missing, the distance is -1.
-    """
-    N, K, _ = preds.shape
-
-    _mask = mask.copy()
-    _mask[np.where((normalize == 0).sum(1))[0], :] = False
-    distances = np.full((N, K), -1, dtype=np.float32)
-
-    normalize[np.where(normalize <= 0)] = 1e6
-
-    temp = (preds - targets) / 1
-    temp = temp[_mask]
-
-    distances[_mask] = np.linalg.norm(
-        temp, axis=-1)
-
-    return distances.T
 
 
 def _distance_acc(distances, thr=0.5):
@@ -90,44 +49,6 @@ def _distance_acc(distances, thr=0.5):
     if num_distance_valid > 0:
         return (distances[distance_valid] < thr).sum() / num_distance_valid
     return -1
-
-
-def own_keypoint_pck_accuracy(pred, gt, mask, thr, normalize):
-    """Calculate the pose accuracy of PCK for each individual keypoint and the
-    averaged accuracy across all keypoints for coordinates.
-
-    Note:
-        PCK metric measures accuracy of the localization of the body joints.
-        The distances between predicted positions and the ground-truth ones
-        are typically normalized by the bounding box size.
-        The threshold (thr) of the normalized distance is commonly set
-        as 0.05, 0.1 or 0.2 etc.
-
-        - batch_size: N
-        - num_keypoints: K
-
-    Args:
-        pred (np.ndarray[N, K, 2]): Predicted keypoint location.
-        gt (np.ndarray[N, K, 2]): Groundtruth keypoint location.
-        mask (np.ndarray[N, K]): Visibility of the target. False for invisible
-            joints, and True for visible. Invisible joints will be ignored for
-            accuracy calculation.
-        thr (float): Threshold of PCK calculation.
-        normalize (np.ndarray[N, 2]): Normalization factor for H&W.
-
-    Returns:
-        tuple: A tuple containing keypoint accuracy.
-
-        - acc (np.ndarray[K]): Accuracy of each keypoint.
-        - avg_acc (float): Averaged accuracy across all keypoints.
-        - cnt (int): Number of valid keypoints.
-    """
-    distances = own_distances(pred, gt, mask, normalize)
-    acc = np.array([_distance_acc(d, thr) for d in distances])
-    valid_acc = acc[acc >= 0]
-    cnt = len(valid_acc)
-    avg_acc = valid_acc.mean() if cnt > 0 else 0
-    return acc, avg_acc, cnt
 
 
 def keypoint_pck_accuracy(pred, gt, mask, thr, normalize):
@@ -219,7 +140,6 @@ def keypoint_auc(pred, gt, mask, normalize, num_step=20):
         float: Area under curve.
     """
 
-    # nor = np.tile(np.array([[normalize, normalize]]), (pred.shape[0], 1))
 
     x = [1.0 * i / num_step for i in range(num_step)]
     y = []

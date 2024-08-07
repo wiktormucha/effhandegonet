@@ -59,6 +59,7 @@ class IoULoss(nn.Module):
 
         return 1 - iou
 
+
 class EffHandEgoNetLoss(nn.Module):
     """
     This class defines the loss function for the EffHandEgoNet model.
@@ -135,15 +136,10 @@ class FPHALoss(nn.Module):
 
         self.obj_loss = nn.CrossEntropyLoss()
         self.hand_pose_loss = IoULoss()
-        # self.hand_keypoints_loss = nn.MSELoss()
 
     def forward(self, pred_obj, pred_pose, obj_label, labels):
 
-        # hand_pose_loss = self.hand_pose_loss(pred_pose, labels)
+        hand_pose_loss = self.hand_pose_loss(pred_pose, labels)
         obj_loss = self.obj_loss(pred_obj, obj_label)
-        # kpts_loss = self.hand_keypoints_loss(
-        #     kpts_pred, kpts_gt)
-        # return (0.01*obj_loss) + (0.99*hand_pose_loss)
-        # return obj_loss
-        # return hand_pose_loss + kpts_loss
-        return obj_loss
+
+        return (0.01*obj_loss) + (0.99*hand_pose_loss)

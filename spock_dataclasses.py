@@ -11,27 +11,18 @@ import albumentations as A
 
 
 class Model(Enum):
-    resnet = 'NewModel'
+    ActionTransformer = 'ActionTransformer'
     EffHandNet = 'EffHandNet'
-    EffnetSimpleRegression = 'CustomEgocentricRegression'
-    EffnetWaterfall = 'EfficientWaterfallEgo'
-    CustomHeatmapsModel = 'CustomHeatmapsModel'
+    ResNet50 = 'ResNet50'
     SwinV2Egocentric = 'SwinV2Egocentric'
     MobileNetV3Egocentric = 'MobileNetV3Egocentric'
     ConvNext3Egocentric = 'ConvNext3Egocentric'
     EffHandEgoNet_FPHAB = 'EffHandEgoNet_FPHAB'
-    CustomEgocentric3D = 'CustomEgocentric3D'
-    CustomEgocentric = 'CustomEgocentric'
-    CustomEgocentric3Depth = 'CustomEgocentric3Depth'
-    CustomEgocentric3Depth2 = 'CustomEgocentric3Depth2'
-    CustomEgocentric3Depth3 = 'CustomEgocentric3Depth3'
-    CustomEgocentric3DepthEstimatedSingleFrame = 'CustomEgocentric3DepthEstimatedSingleFrame'
+    EffHandEgoNet = 'EffHandEgoNet'
 
 
 @spock
 class TrainingConfig:
-    #     max_epochs: int
-    #     batch_size: int
     debug: bool = False
     device: int
     lr: float
@@ -52,7 +43,6 @@ class TrainingConfig:
     num_workers: int
     data_type: str
     dataset: str
-#     early_stopping: int
 
 
 @spock
@@ -89,23 +79,6 @@ class Optimizer(Enum):
     sgd = 'SGD'
     adam = 'Adam'
     adamw = 'AdamW'
-
-
-class Model(Enum):
-    simple_lstm = 'SimpleLSTM'
-    lstm_3d_6d_objinclasss = 'LSTM_3D_6D_OBJINCLASSS'
-    lstm_2d = "LSTM_2D"
-    lstm_2d_2d_objinclasss = "LSTM_2D_2D_OBJINCLASSS"
-    lstm_2d_2dobj = 'LSTM_2D_2DOBJ'
-    lstm_2dbb_2dobj = 'LSTM_2DBB_2DOBJ'
-    lstm_2d_2dobj_embed = 'LSTM_2D_2DOBJ_EMBED'
-    simple_transformer = 'TransfomerKeypoints'
-    simple_transformer1 = 'TransfomerKeypoints_1'
-    simple_transformer2 = 'TransfomerKeypoints_2'
-    simple_transformer3 = 'TransfomerKeypoints_3'
-    simple_transformer_loop = 'ActionTransformer'
-    ActionTransformer_NoLinear = 'ActionTransformer_NoLinear'
-    lstm_2d_2d_objinclass = 'LSTM_2D_2DOBJINCLASS'
 
 
 @spock

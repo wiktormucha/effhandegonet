@@ -204,7 +204,7 @@ elif MODEL_TYPE == EgocentricModelType.effhandegonet:
         grad_clipping=0.0,
         load_model=True,
         load_model_path='saved_models/EffHandEgoNet_H2O_512x512.pth',
-        model_type='CustomEgocentric',
+        model_type='EffHandEgoNet',
         run_name='asdf',
         train_flag=False,
         test_flag=True,

@@ -18,7 +18,7 @@ criterion: 'EffHandEgoNetLossRegression'
 num_workers: 1
 load_model: True
 load_model_path: 'saved_models/EffHandEgoNet_H2O_512x512.pth'
-model_type: 'CustomEgocentric'
+model_type: 'EffHandEgoNet'
 run_name: 'checkpoints/swin_continue'
 train_flag: True
 # test_flag: True

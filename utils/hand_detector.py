@@ -6,6 +6,7 @@ from utils.general_utils import project_points_3D_to_2D
 
 from constants import BB_FACTOR
 
+
 def pil_to_cv(pil_image: Image) -> cv2:
     """
     Converts PIL image to OpenCV
@@ -49,8 +50,7 @@ def crop_image(image: cv2, bbox: dict) -> cv2:
         cv2: Segmented image
     """
 
-    cropped_image = image[bbox['y_min']
-        :bbox['y_max'], bbox['x_min']:bbox['x_max']]
+    cropped_image = image[bbox['y_min']                          :bbox['y_max'], bbox['x_min']:bbox['x_max']]
 
     h, w, c = cropped_image.shape
 
@@ -178,35 +178,7 @@ def get_bb(hand_info: dict, hand_landmarks: dict, w: int, h: int, factor: int = 
     return hand_dict
 
 
-def get_hands_bb(img: np.array, hands) -> list:
-    """
-    Function detecitng hands and returning bounding boxes
-
-    Args:
-        img (np.array): Input image
-        hands (_type_): Hand model
-
-    Returns:
-        list: List of bounding boxes
-    """
-    frame = img
-    h, w, c = frame.shape
-    framergb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    result = hands.process(framergb)
-    hand_landmarks = result.multi_hand_landmarks
-    hand_class = result.multi_handedness
-    hand_bb_list = []
-
-    if hand_landmarks:
-        for handLMs, hand in zip(hand_landmarks, hand_class):
-            hand_bb = get_bb(hand, handLMs, w=w, h=h, mirror=True)
-            hand_bb_list.append(hand_bb)
-            # cv2.rectangle(frame, (hand_bb['x_min'], hand_bb['y_min']), (hand_bb['x_max'], hand_bb['y_max']), (0, 255, 0), 2)
-            # cv2.putText(frame, hand_bb['label'], (hand_bb['x_min'], hand_bb['y_min']-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (36,255,12), 2)
-    return hand_bb_list
-
-
-def get_hands_bb2(img: np.array, hand_landmarks, hand_class) -> list:
+def get_hands_bb(img: np.array, hand_landmarks, hand_class) -> list:
     """
     Function detecitng hands and returning bounding boxes
 
@@ -248,7 +220,7 @@ def get_hands_img(img: np.array, gt_pts: np.array, hand_landmarks, hand_class, c
 
     img = pil_to_cv(img)
 
-    hand_bb_list = get_hands_bb2(img, hand_landmarks, hand_class)
+    hand_bb_list = get_hands_bb(img, hand_landmarks, hand_class)
 
     gt_pts = np.split(gt_pts, [1, 64, 65, 128])
 
