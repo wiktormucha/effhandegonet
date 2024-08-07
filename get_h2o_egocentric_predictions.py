@@ -29,9 +29,12 @@ from utils.egocentric import (
     get_egocentric_predictions_effhandnet,
     get_egocentric_predictions_poseresnet50
 )
+from constants import YOLO_OBJ_FOLDER
+
 MAX_NUM_THREADS = 1
 torch.set_num_threads(MAX_NUM_THREADS)
 SAVE_PREDICTED_POSE = False
+SAVE_YOLO_OBJECTS = True
 # SAVE_GT_IMAGE = True
 
 # MODEL_TYPE = EgocentricModelType.mediapipe
@@ -40,9 +43,17 @@ MODEL_TYPE = EgocentricModelType.effhandegonet
 # MODEL_TYPE = EgocentricModelType.poseresnet50
 DEVICE = 7
 
+
+# DATA_TYPE = 'train'
+# DATA_TYPE = 'val'
+DATA_TYPE = 'test'
+
 config = {
     "device": DEVICE,
 }
+
+
+yolo_labels_dir = f'yolov7_pred/h2o_bb_hands_{DATA_TYPE}/exp/labels'
 # "model_path": "/caa/Homes01/wmucha/repos/applied_deep_learning/applied_dl/custom_heatmap_allaug5_61",
 if MODEL_TYPE == EgocentricModelType.poseresnet50:
 
@@ -50,7 +61,7 @@ if MODEL_TYPE == EgocentricModelType.poseresnet50:
     from mmpose.utils import register_all_modules
     results_file_path = "model_poseresnet50/test_asdf.csv"
     factor = 15
-    yolo_labels_dir = "/caa/Homes01/wmucha/repos/yolov7/h2o_bb_hands_test/exp/labels"
+    # yolo_labels_dir = "/caa/Homes01/wmucha/repos/yolov7/h2o_bb_hands_test/exp/labels"
     register_all_modules()
     config_file = "/caa/Homes01/wmucha/repos/mmpose_test/mmpose-dev-1.x/configs/hand_2d_keypoint/topdown_heatmap/freihand2d/td-hm_res50_8xb64-100e_freihand2d-224x224.py"
     checkpoint_file = "/caa/Homes01/wmucha/repos/mmpose_test/mmpose-dev-1.x/configs/hand_2d_keypoint/topdown_heatmap/freihand2d/res50_freihand_224x224-ff0799bc_20200914.pth"
@@ -90,7 +101,7 @@ if MODEL_TYPE == EgocentricModelType.poseresnet50:
     )
 
 if MODEL_TYPE == EgocentricModelType.effhandnet:
-    yolo_labels_dir = "/caa/Homes01/wmucha/repos/yolov7/h2o_bb_hands_test/exp/labels"
+    # yolo_labels_dir = "/caa/Homes01/wmucha/repos/yolov7/h2o_bb_hands_test/exp/labels"
     factor = 15
     model_cfg = Data(
         path="/data/wmucha/datasets",
@@ -211,7 +222,7 @@ elif MODEL_TYPE == EgocentricModelType.effhandegonet:
 
 
 test_dataset = H2O_Dataset_hand_train(
-    config=model_cfg, type="test", albu_transform=albumentation_val
+    config=model_cfg, type=DATA_TYPE, albu_transform=albumentation_val
 )
 
 test_dataloader = DataLoader(
@@ -272,6 +283,19 @@ for i, data in enumerate(tqdm(test_dataloader, 0)):
     gt_hand_left.append(data["left_hand_flag"])
     gt_hand_right.append(data["right_hand_flag"])
 
+    if SAVE_YOLO_OBJECTS:
+        temp_pth = os.path.join(yolo_labels_dir, "{:06d}.txt".format(i))
+        yolo_labels_file = pd.read_csv(
+            temp_pth, sep=" ", header=None, index_col=None)
+
+        dirname = os.path.join(pth_to_save, YOLO_OBJ_FOLDER)
+
+        if os.path.isdir(dirname) == False:
+            os.mkdir(dirname)
+
+        yolo_labels_file.to_csv(
+            os.path.join(dirname, filename_to_save), sep=" ", index=False, header=None)
+
     # Check the value of "MODEL_TYPE" and call the appropriate function to get the egocentric hand predictions
     if MODEL_TYPE == EgocentricModelType.mediapipe:
         pred_hand_left, pred_hand_right, pred_left_np, pred_right_np = get_egocentric_prediction_mediapipe(img=img, hand_model=model, pth_to_save=pth_to_save, folder_to_save=folder_to_save,
@@ -302,7 +326,7 @@ for i, data in enumerate(tqdm(test_dataloader, 0)):
     # If "SAVE_PREDICTED_POSE" is True, save the predicted poses to file
     if SAVE_PREDICTED_POSE:
         save_predictions(pred_left_np=pred_left_np,
-                         pred_right_np=pred_right_np, pth_to_save=pth_to_save,)
+                         pred_right_np=pred_right_np, pth_to_save=pth_to_save, filename_to_save=filename_to_save, folder_to_save=folder_to_save)
 
     # Initialize some variables for calculating accuracy metrics
     final_epe = 0

@@ -6,6 +6,7 @@ TRAIN_DATASET_STDS = [0.2218, 0.2186, 0.2413]
 RAW_IMG_SIZE = 224
 MODEL_IMG_SIZE = 128
 BB_FACTOR = 25
+YOLO_OBJ_FOLDER = 'obj_pose_ownmodel'
 
 COLORMAP = {
     "thumb": {"ids": [0, 1, 2, 3, 4], "color": "g"},
