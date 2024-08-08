@@ -16,19 +16,19 @@ Please make a folder "saved_models" in the main repository and place there downl
 
 # To run action recognition on H2O and test 2d pose:
 It requires first generating predicted skeletons and object detection:
-1. To run own yolo detections or MMPose/Mediapipe hand pose estimation it requires installing addiotional packaged. Please follow original instractions.
-2. To avoid installing additional packages we provide predicted yolo object that can be downloaded. Place folder under yolov7_pred/.. in the main repository.:
+1. Running your own Yolo detections or MMPose/Mediapipe hand pose estimation requires installing additional packages. Please follow the original instructions.
+2. To avoid installing additional packages, we provide predicted Yolo objects that can be downloaded. Place the folder under yolov7_pred/.. in the main repository.:
 
 [Yolo-Train](https://cloud.cvl.tuwien.ac.at/s/jarkAmnNpAoXSW4);
 [Yolo-Val](https://cloud.cvl.tuwien.ac.at/s/5CNHSA6FBHkrtpP);
 [Yolo-Test](https://cloud.cvl.tuwien.ac.at/s/GQBM2tDc8Kjam26)
 
-3. Run the code below to generate yolo files in your dataset and pose predicted with EffHandEgoNet. The code calculates hand pose errors:
+3. Run the code below to generate Yolo files in your dataset and pose predicted with EffHandEgoNet. The code calculates hand pose errors:
 
 ```bash
 python get_h2o_egocentric_predictions.py --model_type effhandegonet --device cuda --data_type test --save_pose False --save_yolo_objects True --dataset_path "path_to_dataset"
 ```
-4. Finally run the action recognition prediction:
+4. Finally run the action recognition:
 ```bash
 python train_action.py -c cfgs/test_h2o_actions.yaml
 
